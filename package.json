@@ -5,11 +5,11 @@
   "license": "ISC",
   "author": "sunny",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "sir/server.js",
   "scripts": {
     "dist":"npx tsc",
-    "dev": "nodemon src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "nodemon src/server.ts",
+    "start": "node dist/server.js",
     "prepare": "husky"
   },
   "devDependencies": {
