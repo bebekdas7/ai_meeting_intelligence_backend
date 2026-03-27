@@ -1,0 +1,160 @@
+import "dotenv/config";
+import amqp from "amqplib";
+import express from "express";
+import { extractAudio } from "../util/ffmpeg";
+import { transcribeAudio } from "../service/transcriptionService";
+import meetingModel from "../model/meetingModel";
+import { buildAudioPath } from "../util/upload";
+import { extractActionItems } from "../service/actionItemService";
+import actionItemModel from "../model/actionItemModel";
+import { logger } from "../util/logger";
+
+const QUEUE_NAME = "meeting_video_processing";
+const healthApp = express();
+
+// Main consumer for meeting video processing jobs
+async function startConsumer() {
+  // Connect to RabbitMQ
+  logger.info("Starting meeting video processing consumer");
+  const connection = await amqp.connect(
+    process.env.RABBITMQ_URL || "amqp://localhost",
+  );
+  const channel = await connection.createChannel();
+  await channel.assertQueue(QUEUE_NAME, { durable: true });
+
+  // LIMIT concurrency to 1 job at a time
+  channel.prefetch(1);
+  logger.info("[Consumer] Waiting for messages in queue", { QUEUE_NAME });
+
+  // Start consuming jobs from the queue
+  channel.consume(
+    QUEUE_NAME,
+    async (msg) => {
+      if (!msg) return;
+      try {
+        // Parse job payload
+        const job = JSON.parse(msg.content.toString());
+        const { meetingId, video } = job;
+        logger.info("[Consumer] Processing meeting", { meetingId });
+
+        // 1. Extract audio from video file using ffmpeg
+        const audioPath = buildAudioPath(meetingId);
+        await extractAudio(video, audioPath);
+        logger.info("[Consumer] Audio extracted", { meetingId, audioPath });
+
+        // 2. Transcribe audio to text using OpenAI Whisper
+        const transcript = await transcribeAudio(audioPath);
+        logger.info("[Consumer] Audio transcribed", { meetingId });
+
+        // 3. Generate summary (placeholder: first 200 chars)
+        const summary =
+          transcript.slice(0, 200) + (transcript.length > 200 ? "..." : "");
+
+        // 4. Generate a title using AI (OpenAI GPT)
+        let title = "";
+        try {
+          const openai = require("openai");
+          const openaiClient = new openai.OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+          });
+          const prompt = `Generate a concise, descriptive title for this meeting transcript:\n${transcript.slice(0, 1000)}`;
+          const completion = await openaiClient.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a helpful assistant that creates meeting titles.",
+              },
+              { role: "user", content: prompt },
+            ],
+            max_tokens: 20,
+            temperature: 0.7,
+          });
+          title = completion.choices[0]?.message?.content?.trim() || "";
+          logger.info("[Consumer] Title generated", { meetingId, title });
+        } catch (err) {
+          logger.error("[Consumer] Failed to generate title", {
+            meetingId,
+            err,
+          });
+        }
+
+        // 5. Extract and persist action items (idempotent)
+        //    - Uses LLM to extract action items from the full transcript
+        //    - Deletes old action items for this meeting
+        //    - Bulk inserts new action items
+        console.log("Transcript before action item extraction:", transcript);
+        const actionItems = await extractActionItems(transcript);
+        logger.info("[Consumer] Action items extracted", {
+          meetingId,
+          count: actionItems.length,
+        });
+        await actionItemModel.deleteByMeetingId(meetingId);
+        await actionItemModel.bulkInsertActionItems(meetingId, actionItems);
+        logger.info("[Consumer] Action items persisted", { meetingId });
+
+        // 6. Update meeting record in DB with results (including title)
+        await meetingModel.updateMeetingResultsWithTitle(meetingId, {
+          audioPath,
+          transcript,
+          summary,
+          status: "completed",
+          title,
+        });
+        logger.info("[Consumer] Meeting record updated", { meetingId });
+
+        logger.info(`[Consumer] Completed meetingId=${meetingId}`);
+        channel.ack(msg);
+      } catch (err) {
+        // Error handling and retry logic
+        logger.error("[Consumer] Error processing job", { err });
+        try {
+          const job = JSON.parse(msg.content.toString());
+          // Update meeting status to 'failed' in DB
+          await meetingModel.updateMeetingResults(job.meetingId, {
+            audioPath: "",
+            transcript: "",
+            summary: "",
+            status: "failed",
+          });
+          let retries = job.retries || 0;
+          if (retries < 3) {
+            // Requeue job with incremented retry count
+            channel.sendToQueue(
+              QUEUE_NAME,
+              Buffer.from(JSON.stringify({ ...job, retries: retries + 1 })),
+              { persistent: true },
+            );
+            logger.warn(
+              `[Consumer] Retrying job meetingId=${job.meetingId}, attempt ${retries + 1}`,
+            );
+          }
+        } catch (parseErr) {
+          logger.error("[Consumer] Failed to parse job for retry", {
+            parseErr,
+          });
+        }
+        channel.ack(msg);
+      }
+    },
+    { noAck: false },
+  );
+}
+
+// Start the consumer on process launch
+startConsumer().catch((err) => {
+  logger.error("[Consumer] Fatal error", { err });
+  process.exit(1);
+});
+
+// Health check server for worker
+healthApp.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+const HEALTH_PORT = process.env.WORKER_HEALTH_PORT || 4001;
+healthApp.listen(HEALTH_PORT, () => {
+  logger.info(
+    `[Consumer] Health check endpoint running on port ${HEALTH_PORT}`,
+  );
+});
