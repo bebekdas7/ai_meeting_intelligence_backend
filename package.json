@@ -10,7 +10,8 @@
     "dist": "npx tsc",
     "dev": "nodemon src/server.ts",
     "start": "node dist/server.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build": "npx tsc"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.4.4",
