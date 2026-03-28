@@ -1,4 +1,7 @@
 import { Router } from "express";
+import multer from "multer";
+import { videoStorage } from "../config/cloudinaryMulter";
+import { getUserMeetingDashboard } from "../controller/meetingController";
 import {
   uploadMeetingVideo,
   getMeetingsForUser,
@@ -19,11 +22,11 @@ const uploadLimiter = rateLimit({
 });
 
 const meetingRouter = Router();
+const upload = multer({ storage: videoStorage });
 
 // Get the most recent meeting for the logged-in user
 meetingRouter.get("/recent", authenticate, getMostRecentMeetingForUser);
 
-import { getUserMeetingDashboard } from "../controller/meetingController";
 // User dashboard stats endpoint
 meetingRouter.get("/dashboard", authenticate, getUserMeetingDashboard);
 
@@ -33,6 +36,7 @@ meetingRouter.post(
   uploadLimiter,
   authenticate,
   authorize("user", "admin"),
+  upload.single("file"),
   uploadMeetingVideo,
 );
 

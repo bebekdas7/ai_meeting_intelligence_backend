@@ -13,11 +13,13 @@ export function sanitizeFilename(filename: string): string {
 }
 
 export function buildVideoPath(meetingId: string, filename: string): string {
+  console.log("Building video path", { meetingId, filename });
   const safeFilename = sanitizeFilename(filename);
   const ext = path.extname(safeFilename);
   return path.join(UPLOAD_DIRS.VIDEO, `${meetingId}${ext}`);
 }
 
 export function buildAudioPath(meetingId: string): string {
+  console.log("Building audio path", { meetingId });
   return path.join(UPLOAD_DIRS.AUDIO, `${meetingId}.mp3`);
 }

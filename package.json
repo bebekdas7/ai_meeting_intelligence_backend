@@ -11,7 +11,8 @@
     "dev": "nodemon src/server.ts",
     "build": "npx tsc",
     "start": "node dist/server.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "worker": "npx ts-node src/worker/meetingConsumer.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.4.4",
@@ -23,6 +24,7 @@
     "@types/express": "^5.0.6",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0",
     "@types/node": "^25.5.0",
     "@types/pg": "^8.18.0",
     "husky": "^9.1.7",
@@ -30,5 +32,27 @@
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.9",
+    "axios": "^1.13.6",
+    "bcrypt": "^6.0.0",
+    "busboy": "^1.6.0",
+    "clamscan": "^2.4.0",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "ffmpeg-static": "^5.3.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
+    "multer-storage-cloudinary": "^4.0.0",
+    "openai": "^6.29.0",
+    "pg": "^8.20.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "zod": "^4.3.6"
   }
 }

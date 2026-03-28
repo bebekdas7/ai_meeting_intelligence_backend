@@ -2,12 +2,16 @@ import "dotenv/config";
 import amqp from "amqplib";
 import express from "express";
 import { extractAudio } from "../util/ffmpeg";
+import axios from "axios";
+import fs from "fs";
+import path from "path";
 import { transcribeAudio } from "../service/transcriptionService";
 import meetingModel from "../model/meetingModel";
 import { buildAudioPath } from "../util/upload";
 import { extractActionItems } from "../service/actionItemService";
 import actionItemModel from "../model/actionItemModel";
 import { logger } from "../util/logger";
+import cloudinary from "../config/cloudinary";
 
 const QUEUE_NAME = "meeting_video_processing";
 const healthApp = express();
@@ -35,16 +39,93 @@ async function startConsumer() {
         // Parse job payload
         const job = JSON.parse(msg.content.toString());
         const { meetingId, video } = job;
-        logger.info("[Consumer] Processing meeting", { meetingId });
+        logger.info("[Consumer] Processings meeting bro", { job, meetingId });
 
-        // 1. Extract audio from video file using ffmpeg
+        console.log(
+          "Received job for meetingId:",
+          meetingId,
+          "video path:",
+          video,
+        );
+
+        // 1. Download video from Cloudinary URL to temp file
+        const tempVideoPath = path.join(
+          __dirname,
+          `temp_${meetingId}_${Date.now()}.mp4`,
+        );
+        logger.info("[Consumer] Downloading video from Cloudinary", {
+          meetingId,
+          video,
+        });
+        const writer = fs.createWriteStream(tempVideoPath);
+        const response = await axios({
+          method: "get",
+          url: video,
+          responseType: "stream",
+        });
+        await new Promise((resolve, reject) => {
+          response.data.pipe(writer);
+          writer.on("finish", resolve);
+          writer.on("error", reject);
+        });
+        logger.info("[Consumer] Video downloaded", {
+          meetingId,
+          tempVideoPath,
+        });
+
+        // 2. Extract audio from downloaded video file using ffmpeg
         const audioPath = buildAudioPath(meetingId);
-        await extractAudio(video, audioPath);
+        await extractAudio(tempVideoPath, audioPath);
         logger.info("[Consumer] Audio extracted", { meetingId, audioPath });
 
-        // 2. Transcribe audio to text using OpenAI Whisper
+        // 3. Transcribe audio to text using OpenAI Whisper (before deleting audio file)
         const transcript = await transcribeAudio(audioPath);
         logger.info("[Consumer] Audio transcribed", { meetingId });
+ 
+        // 4. Upload audio file to Cloudinary (after transcription)
+        let audioCloudinaryUrl = "";
+        try {
+          const audioUploadResult = await cloudinary.uploader.upload(
+            audioPath,
+            {
+              resource_type: "video", // Use 'raw' for mp3 audio
+              folder: "meeting_audios",
+              public_id: `${meetingId}`,
+              format: "mp3",
+            },
+          );
+          audioCloudinaryUrl =
+            audioUploadResult.secure_url || audioUploadResult.url;
+          logger.info("[Consumer] Audio uploaded to Cloudinary", {
+            meetingId,
+            audioCloudinaryUrl,
+          });
+        } catch (err) {
+          logger.error("[Consumer] Failed to upload audio to Cloudinary", {
+            meetingId,
+            err,
+          });
+        }
+
+        // 5. Clean up temp video and audio files
+        try {
+          fs.unlinkSync(tempVideoPath);
+          logger.info("[Consumer] Temp video file deleted", { meetingId });
+        } catch (err) {
+          logger.warn("[Consumer] Failed to delete temp video file", {
+            meetingId,
+            err,
+          });
+        }
+        try {
+          fs.unlinkSync(audioPath);
+          logger.info("[Consumer] Temp audio file deleted", { meetingId });
+        } catch (err) {
+          logger.warn("[Consumer] Failed to delete temp audio file", {
+            meetingId,
+            err,
+          });
+        }
 
         // 3. Generate summary (placeholder: first 200 chars)
         const summary =
@@ -94,9 +175,9 @@ async function startConsumer() {
         await actionItemModel.bulkInsertActionItems(meetingId, actionItems);
         logger.info("[Consumer] Action items persisted", { meetingId });
 
-        // 6. Update meeting record in DB with results (including title)
+        // 6. Update meeting record in DB with results (including title and Cloudinary audio URL)
         await meetingModel.updateMeetingResultsWithTitle(meetingId, {
-          audioPath,
+          audioPath: audioCloudinaryUrl,
           transcript,
           summary,
           status: "completed",

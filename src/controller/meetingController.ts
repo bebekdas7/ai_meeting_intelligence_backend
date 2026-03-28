@@ -1,15 +1,11 @@
 import actionItemModel from "../model/actionItemModel";
-import Busboy from "busboy";
-import stream from "stream";
+// Removed Busboy and stream imports; using multer/Cloudinary
 import { Request, Response } from "express";
-import { saveMeetingVideo } from "../service/meetingService";
 import { publishJob } from "../service/rabbitmq";
 import meetingModel from "../model/meetingModel";
-import { buildVideoPath } from "../util/upload";
 import { RESPONSE_MESSAGES } from "../constant/responseMessage";
 import { httpResponse } from "../util/httpResponse";
 import { logger, logControllerError } from "../util/logger";
-const { filterSensitive } = require("../util/logger");
 
 /**
  * Get user dashboard stats: total meetings, pending action items, completed action items, pending meetings
@@ -73,133 +69,55 @@ export const uploadMeetingVideo = async (req: Request, res: Response) => {
   logger.info("Upload meeting video request received", {
     userId: req.user?.userId,
   });
-  // 100MB file size limit
-  const busboy = Busboy({
-    headers: req.headers,
-    limits: { fileSize: 100 * 1024 * 1024 },
-  });
-  let responseSent = false;
-
-  const sendErrorOnce = (status: number, body: object) => {
-    if (!responseSent) {
-      responseSent = true;
-      logger.warn("Upload meeting video error", { status, body });
-      res.status(status).json(body);
-    }
-  };
-
-  const sendSuccessOnce = (status: number, message: string, data: unknown) => {
-    if (!responseSent) {
-      responseSent = true;
-      logger.info("Upload meeting video success", { status, message, data });
-      httpResponse(res, status, message, data);
-    }
-  };
-
-  busboy.on("file", (_fieldname, file, info) => {
-    const { filename, mimeType } = info;
-    logger.debug("File received for upload", { filename, mimeType });
-
-    // Validate MIME type (client-provided, not trusted)
-    if (!mimeType || !mimeType.startsWith("video/")) {
-      file.resume();
-      sendErrorOnce(400, { error: RESPONSE_MESSAGES.ONLY_VIDEO_ALLOWED });
-      return;
-    }
-
-    // Get userId from req.user (set by auth middleware)
+  try {
     const userId = req.user?.userId;
     if (!userId) {
-      file.resume();
-      sendErrorOnce(401, { error: "Unauthorized: userId missing" });
-      return;
+      logger.warn("Unauthorized: userId missing");
+      return res.status(401).json({ error: "Unauthorized: userId missing" });
     }
-
-    // Buffer the first 16 bytes to check magic number
-    const headerChunks: Buffer[] = [];
-    let headerBytes = 0;
-    let headerChecked = false;
-    const MAX_HEADER_BYTES = 16;
-    const passThrough = new stream.PassThrough();
-
-    file.on("data", (chunk) => {
-      if (!headerChecked && headerBytes < MAX_HEADER_BYTES) {
-        const needed = MAX_HEADER_BYTES - headerBytes;
-        headerChunks.push(chunk.slice(0, needed));
-        headerBytes += chunk.length;
-        if (headerBytes >= MAX_HEADER_BYTES) {
-          const header = Buffer.concat(headerChunks, MAX_HEADER_BYTES);
-          // Check for common video file signatures (MP4, WebM, MKV)
-          const isMp4 = header.slice(4, 8).toString() === "ftyp";
-          const isWebM = header.slice(0, 4).toString() === "\x1A\x45\xDF\xA3";
-          const isMkv = header.slice(0, 4).toString("hex") === "1a45dfa3";
-          if (!(isMp4 || isWebM || isMkv)) {
-            file.unpipe(passThrough);
-            file.resume();
-            sendErrorOnce(400, {
-              error: "Invalid or unsupported video file format.",
-            });
-            headerChecked = true;
-            return;
-          }
-          headerChecked = true;
-        }
-      }
-      passThrough.write(chunk);
+    // Multer/Cloudinary puts file info on req.file
+    const file = req.file as Express.Multer.File & {
+      path?: string;
+      filename?: string;
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+      public_id?: string;
+      url?: string;
+      secure_url?: string;
+      format?: string;
+      resource_type?: string;
+    };
+    if (!file || !file.path && !file.url && !file.secure_url) {
+      logger.warn("No file uploaded or Cloudinary upload failed");
+      return res.status(400).json({ error: RESPONSE_MESSAGES.ONLY_VIDEO_ALLOWED });
+    }
+    // Accept Cloudinary URL (prefer secure_url, then url, then path)
+    const videoUrl = file.secure_url || file.url || file.path;
+    // 1. Create meeting record in DB with Cloudinary URL
+    const meeting = await meetingModel.createMeeting(userId, videoUrl, "");
+    const meetingId = meeting.id;
+    logger.info("Meeting record created", { meetingId, userId, videoUrl });
+    // 2. Update meeting record with status and empty results
+    await meetingModel.updateMeetingResults(meetingId, {
+      audioPath: "",
+      transcript: "",
+      summary: "",
+      status: "uploaded",
     });
-
-    file.on("end", () => {
-      passThrough.end();
-    });
-
-    (async () => {
-      try {
-        // 1. Create meeting record in DB (get canonical id)
-        const meeting = await meetingModel.createMeeting(userId, "", "");
-        const meetingId = meeting.id;
-        logger.info("Meeting record created", { meetingId, userId });
-
-        // 2. Build video path using DB id
-        const videoPath = buildVideoPath(meetingId, filename);
-
-        // 3. Save video file (from passThrough, not file directly)
-        await saveMeetingVideo(meetingId, videoPath, passThrough, userId);
-        logger.info("Video file saved", { meetingId, videoPath });
-
-        // 4. Update meeting record with video path
-        await meetingModel.updateMeetingVideoPath(meetingId, videoPath);
-        await meetingModel.updateMeetingResults(meetingId, {
-          audioPath: "",
-          transcript: "",
-          summary: "",
-          status: "uploaded",
-        });
-        logger.info("Meeting record updated after upload", { meetingId });
-
-        // 5. Publish job to RabbitMQ for async processing
-        publishJob({ meetingId, userId, video: videoPath });
-        logger.info("Job published to RabbitMQ", { meetingId });
-
-        sendSuccessOnce(200, RESPONSE_MESSAGES.UPLOAD_SUCCESS, { meetingId });
-      } catch (error) {
-        // Filter sensitive headers before logging
-        logControllerError(logger, "Meeting upload error", error, req, {
-          reqHeaders: filterSensitive(req.headers),
-          reqFileInfo: info,
-        });
-        const message =
-          error instanceof Error
-            ? error.message
-            : RESPONSE_MESSAGES.AUDIO_EXTRACTION_FAILED;
-        sendErrorOnce(500, { error: message });
-      }
-    })();
-  });
-  busboy.on("filesLimit", () => {
-    sendErrorOnce(400, { error: "File size limit exceeded (100MB max)." });
-  });
-
-  req.pipe(busboy);
+    logger.info("Meeting record updated after upload", { meetingId });
+    // 3. Publish job to RabbitMQ for async processing
+    publishJob({ meetingId, userId, video: videoUrl });
+    logger.info("Job published to RabbitMQ", { meetingId });
+    return httpResponse(res, 200, RESPONSE_MESSAGES.UPLOAD_SUCCESS, { meetingId });
+  } catch (error) {
+    logControllerError(logger, "Meeting upload error", error, req);
+    const message =
+      error instanceof Error
+        ? error.message
+        : RESPONSE_MESSAGES.AUDIO_EXTRACTION_FAILED;
+    return res.status(500).json({ error: message });
+  }
 };
 
 /**
