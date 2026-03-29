@@ -16,7 +16,11 @@ const generalLimiter = rateLimit({
 });
 
 const app: Application = express();
-const allowedOrigins = ["http://localhost:8080", "http://localhost:5173"];
+const allowedOrigins = [
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "https://meeting-insights-hub.onrender.com/"
+];
 app.use(
   cors({
     origin: (origin, callback) => {
