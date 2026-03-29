@@ -19,7 +19,7 @@ const app: Application = express();
 const allowedOrigins = [
   "http://localhost:8080",
   "http://localhost:5173",
-  "https://meeting-insights-hub.onrender.com/"
+  "https://meeting-insights-hub.onrender.com"
 ];
 app.use(
   cors({
