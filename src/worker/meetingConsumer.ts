@@ -81,7 +81,7 @@ async function startConsumer() {
         // 3. Transcribe audio to text using OpenAI Whisper (before deleting audio file)
         const transcript = await transcribeAudio(audioPath);
         logger.info("[Consumer] Audio transcribed", { meetingId });
- 
+
         // 4. Upload audio file to Cloudinary (after transcription)
         let audioCloudinaryUrl = "";
         try {
@@ -233,7 +233,7 @@ startConsumer().catch((err) => {
 healthApp.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
-const HEALTH_PORT = process.env.WORKER_HEALTH_PORT || 4001;
+const HEALTH_PORT = process.env.PORT || 4001;
 healthApp.listen(HEALTH_PORT, () => {
   logger.info(
     `[Consumer] Health check endpoint running on port ${HEALTH_PORT}`,
