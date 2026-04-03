@@ -17,7 +17,6 @@ export async function saveMeetingVideo(
   fileStream: NodeJS.ReadableStream,
   userId: string,
 ): Promise<void> {
-
   logger.info("Saving meeting video", { meetingId, videoPath, userId });
   await new Promise<void>((resolve, reject) => {
     const writeStream = fs.createWriteStream(videoPath);
@@ -38,29 +37,61 @@ export async function saveMeetingVideo(
           logger.error("Failed to extract video duration", { videoPath, err });
           resolve(null);
         } else {
-          const dur = typeof metadata.format.duration === "number" ? metadata.format.duration : null;
+          const dur =
+            typeof metadata.format.duration === "number"
+              ? metadata.format.duration
+              : null;
           resolve(dur);
         }
       });
     });
     if (duration !== null) {
       await meetingModel.updateMeetingVideoDuration(meetingId, duration);
-      logger.info("Video duration extracted and saved", { meetingId, duration });
+      logger.info("Video duration extracted and saved", {
+        meetingId,
+        duration,
+      });
     }
   } catch (err) {
     logger.error("Error extracting/saving video duration", { videoPath, err });
   }
 
   // Scan for viruses (can be disabled by editing scanFileForVirus)
-//   const clean = await scanFileForVirus(videoPath);
-//   if (!clean) {
-//     logger.error("Virus detected in uploaded file", { videoPath });
-//     fs.unlinkSync(videoPath);
-//     throw new AppError(
-//       "Uploaded file failed virus scan and was rejected.",
-//       400,
-//     );
-//   }
+  //   const clean = await scanFileForVirus(videoPath);
+  //   if (!clean) {
+  //     logger.error("Virus detected in uploaded file", { videoPath });
+  //     fs.unlinkSync(videoPath);
+  //     throw new AppError(
+  //       "Uploaded file failed virus scan and was rejected.",
+  //       400,
+  //     );
+  //   }
 
   logger.info("Meeting video saved and scanned", { meetingId, videoPath });
+}
+
+/**
+ * Update the title of a meeting.
+ * @param meetingId Meeting ID
+ * @param title New title
+ * @returns {Promise<{ success: boolean; title: string }>} Result
+ */
+export async function updateMeetingTitle(
+  meetingId: string,
+  title: string,
+): Promise<{ success: boolean; title: string }> {
+  try {
+    if (!title || typeof title !== "string" || title.trim().length === 0) {
+      throw new AppError("Title must be a non-empty string", 400);
+    }
+    // Optionally, add more validation (length, characters, etc.)
+    const result = await meetingModel.updateMeetingTitle(
+      meetingId,
+      title.trim(),
+    );
+    return result;
+  } catch (err) {
+    logger.error("Failed to update meeting title", { meetingId, err });
+    throw err;
+  }
 }

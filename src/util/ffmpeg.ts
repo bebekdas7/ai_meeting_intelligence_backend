@@ -1,9 +1,16 @@
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
 
 ffmpeg.setFfmpegPath(ffmpegPath as string);
+ffmpeg.setFfprobePath(ffprobeStatic.path);
 
-export function extractAudio(videoPath: string, outputAudioPath: string): Promise<void> {
+export { ffmpeg };
+
+export function extractAudio(
+  videoPath: string,
+  outputAudioPath: string,
+): Promise<void> {
   console.log("Extracting audio from video", { videoPath, outputAudioPath });
   return new Promise((resolve, reject) => {
     console.log("Starting ffmpeg audio extraction");

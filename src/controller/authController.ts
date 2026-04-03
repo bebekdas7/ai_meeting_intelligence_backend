@@ -10,8 +10,8 @@ export async function signupController(
 ): Promise<void> {
   logger.info("Signup request received", { email: req.body?.email });
   try {
-    const { email, password } = req.body as SignupInput;
-    const user = await signup(email, password);
+    const { name, email, password } = req.body as SignupInput & { name: string };
+    const user = await signup(name, email, password);
     logger.info("User signed up successfully", { userId: user.id });
     httpResponse(res, 201, "Signup successful", { user });
   } catch (error) {

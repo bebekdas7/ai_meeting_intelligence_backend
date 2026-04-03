@@ -15,6 +15,26 @@ async function createMeeting(
   return result.rows[0];
 }
 
+/**
+ * Updates the title of a meeting and returns success and the updated title.
+ * @param meetingId Meeting ID
+ * @param title New title
+ * @returns {Promise<{ success: boolean; title: string }>} Result
+ */
+async function updateMeetingTitle(
+  meetingId: string,
+  title: string,
+): Promise<{ success: boolean; title: string }> {
+  const result = await pool.query(
+    `UPDATE meetings SET title = $1 WHERE id = $2 RETURNING title`,
+    [title, meetingId],
+  );
+  return {
+    success: (result.rowCount ?? 0) > 0,
+    title: result.rows[0]?.title || "",
+  };
+}
+
 async function getMeetingById(meetingId: string) {
   const result = await pool.query(`SELECT * FROM meetings WHERE id = $1`, [
     meetingId,
@@ -105,4 +125,5 @@ export default {
   updateMeetingVideoPath,
   updateMeetingVideoDuration,
   updateMeetingResultsWithTitle,
+  updateMeetingTitle,
 };

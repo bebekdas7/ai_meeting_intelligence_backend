@@ -12,7 +12,6 @@ export async function getActionItemsForUserMeetings(
     userId: req.user?.userId,
   });
   try {
-    console.log("Fetching meetings for userId:", req.user);
     const userId = req.user?.userId;
     if (!userId) {
       logger.warn("Unauthorized: userId missing");

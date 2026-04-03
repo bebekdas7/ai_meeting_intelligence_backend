@@ -8,6 +8,7 @@ import {
   retryMeetingProcessing,
   getMostRecentMeetingForUser,
   getMeetingById,
+  editMeetingTitle,
 } from "../controller/meetingController";
 import { authenticate } from "../middleware/authMiddleware";
 import { authorize } from "../middleware/authorizeMiddleware";
@@ -37,6 +38,10 @@ meetingRouter.post(
   authenticate,
   authorize("user", "admin"),
   upload.single("file"),
+  (_req, _res, next) => {
+    console.log("before multer upload.single");
+    next();
+  },
   uploadMeetingVideo,
 );
 
@@ -56,5 +61,13 @@ meetingRouter.get("/:meetingId", authenticate, getMeetingById);
 
 // User dashboard stats endpoint (must be after all other specific routes)
 meetingRouter.get("/dashboard", authenticate, getUserMeetingDashboard);
+
+// Edit meeting title
+meetingRouter.patch(
+  "/:meetingId/title",
+  authenticate,
+  authorize("user", "admin"),
+  editMeetingTitle,
+);
 
 export default meetingRouter;

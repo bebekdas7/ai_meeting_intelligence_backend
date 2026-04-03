@@ -1,6 +1,7 @@
 import meetingRouter from "./router/meetingRouter";
 import authRouter from "./router/authRouter";
 import actionItemRouter from "./router/actionItemRouter";
+import apiRouter from "./router/apiRouter";
 import express, { Application, NextFunction, Request, Response } from "express";
 import { globalErrorHandler } from "./middleware/globalErrorHandler";
 import { AppError } from "./util/errorObject";
@@ -8,7 +9,7 @@ import rateLimit from "express-rate-limit";
 import cors from "cors";
 
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
@@ -19,7 +20,8 @@ const app: Application = express();
 const allowedOrigins = [
   "http://localhost:8080",
   "http://localhost:5173",
-  "https://meeting-insights-hub.onrender.com"
+  "http://localhost:5174",
+  "https://meeting-insights-hub.onrender.com",
 ];
 app.use(
   cors({
@@ -49,6 +51,7 @@ app.get("/", (_req: Request, res: Response) => {
 app.use("/api/auth", authRouter);
 app.use("/api/meetings", meetingRouter);
 app.use("/api/action-items", actionItemRouter);
+app.use("/api", apiRouter);
 
 // 404 handler — must be after all routers
 app.use((_req: Request, _res: Response, next: NextFunction) => {

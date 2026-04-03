@@ -1,7 +1,7 @@
 import "dotenv/config";
 import amqp from "amqplib";
 import express from "express";
-import { extractAudio } from "../util/ffmpeg";
+import { extractAudio, ffmpeg } from "../util/ffmpeg";
 import axios from "axios";
 import fs from "fs";
 import path from "path";
@@ -9,6 +9,7 @@ import { transcribeAudio } from "../service/transcriptionService";
 import meetingModel from "../model/meetingModel";
 import { buildAudioPath } from "../util/upload";
 import { extractActionItems } from "../service/actionItemService";
+import { generateMeetingSummary } from "../service/summaryService";
 import actionItemModel from "../model/actionItemModel";
 import { logger } from "../util/logger";
 import cloudinary from "../config/cloudinary";
@@ -78,6 +79,43 @@ async function startConsumer() {
         await extractAudio(tempVideoPath, audioPath);
         logger.info("[Consumer] Audio extracted", { meetingId, audioPath });
 
+        // 2b. Extract video duration from the downloaded temp file
+        let videoDuration: number | null = null;
+        try {
+          videoDuration = await new Promise<number | null>((resolve) => {
+            ffmpeg.ffprobe(tempVideoPath, (err, metadata) => {
+              if (err) {
+                logger.error("[Consumer] Failed to extract video duration", {
+                  meetingId,
+                  err,
+                });
+                resolve(null);
+              } else {
+                const dur =
+                  typeof metadata.format.duration === "number"
+                    ? metadata.format.duration
+                    : null;
+                resolve(dur);
+              }
+            });
+          });
+          if (videoDuration !== null) {
+            await meetingModel.updateMeetingVideoDuration(
+              meetingId,
+              videoDuration,
+            );
+            logger.info("[Consumer] Video duration extracted and saved", {
+              meetingId,
+              videoDuration,
+            });
+          }
+        } catch (err) {
+          logger.error("[Consumer] Error extracting video duration", {
+            meetingId,
+            err,
+          });
+        }
+
         // 3. Transcribe audio to text using OpenAI Whisper (before deleting audio file)
         const transcript = await transcribeAudio(audioPath);
         logger.info("[Consumer] Audio transcribed", { meetingId });
@@ -127,9 +165,13 @@ async function startConsumer() {
           });
         }
 
-        // 3. Generate summary (placeholder: first 200 chars)
-        const summary =
-          transcript.slice(0, 200) + (transcript.length > 200 ? "..." : "");
+        logger.info("[Consumer] Starting summary generation");
+        // 3. Generate summary using summaryService
+        const summary = await generateMeetingSummary(
+          transcript,
+          meetingId,
+          process.env.OPENAI_API_KEY || "",
+        );
 
         // 4. Generate a title using AI (OpenAI GPT)
         let title = "";

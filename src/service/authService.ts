@@ -9,20 +9,35 @@ import {
   JWT_ALGORITHM,
 } from "../config/config";
 import userModel from "../model/userModel";
+import { insertCreditTransaction } from "../model/creditTransactionModel";
 
 const SALT_ROUNDS = getBcryptSaltRounds();
 
 // Signup function to create a new user with hashed password
-async function signup(email: string, password: string) {
+async function signup(name: string, email: string, password: string) {
   const salt = await bcrypt.genSalt(SALT_ROUNDS);
   const hashedPassword = await bcrypt.hash(password, salt);
 
-  const user = await userModel.createUser(email, hashedPassword);
+  const user = await userModel.createUser(name, email, hashedPassword);
 
-  return { id: user.id, email: user.email, role: user.role };
+  // Seed 2 free credits (no expiry) for new free users
+  await insertCreditTransaction({
+    user_id: user.id,
+    type: "credit",
+    amount: 2,
+    source: "signup_free",
+    expiry: null,
+  });
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    plan: user.current_plan,
+  };
 }
 
-// login function to authenticate user and return a token (not implemented here)
+// login function to authenticate user and return a token
 async function login(email: string, password: string) {
   const user = await userModel.findUserByEmail(email);
 
@@ -35,9 +50,8 @@ async function login(email: string, password: string) {
     throw new Error("Invalid Email or password");
   }
 
-  // Token generation logic would go here (e.g., JWT)
   const token = jwt.sign(
-    { userId: user.id, email: user.email, role: user.role ?? "user" },
+    { userId: user.id, email: user.email, role: "user" },
     getJwtSecret(),
     {
       algorithm: JWT_ALGORITHM,
@@ -46,8 +60,17 @@ async function login(email: string, password: string) {
       expiresIn: getJwtExpiresIn(),
     },
   );
-  // do not return the password hash
-  return { token, user: { id: user.id, email: user.email, role: user.role } };
+
+  return {
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      plan: user.current_plan,
+      plan_expiry: user.plan_expiry,
+    },
+  };
 }
 
 export { signup, login };
