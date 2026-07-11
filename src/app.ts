@@ -22,6 +22,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://meeting-insights-hub.onrender.com",
+  "http://13.62.46.45",
 ];
 app.use(
   cors({
