@@ -12,7 +12,7 @@
     "build": "npx tsc",
     "start": "node dist/server.js",
     "prepare": "husky",
-    "worker": "npx ts-node src/worker/meetingConsumer.ts",
+    "worker": "node dist/worker/meetingConsumer.js",
     "worker:expiry-alert": "npx ts-node src/worker/subscriptionExpiryAlertJob.ts",
     "worker:expiry-maintenance": "npx ts-node src/worker/subscriptionExpiryMaintenanceJob.ts",
     "migrate": "npx ts-node src/migrations/runAllMigrations.ts",
