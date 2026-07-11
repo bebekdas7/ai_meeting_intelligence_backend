@@ -56,6 +56,7 @@ async function createTables() {
       );
     `);
 
+    // -- MEETINGS TABLE (with video/audio paths, transcript, summary, status, title, duration)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS meetings (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -71,6 +72,7 @@ async function createTables() {
       );
     `);
 
+    // -- ACTION ITEMS TABLE (linked to meetings)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS action_items (
         id SERIAL PRIMARY KEY,

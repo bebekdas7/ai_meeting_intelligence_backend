@@ -42,7 +42,15 @@ app.options(/.*/, cors());
 app.use(express.json());
 app.use(generalLimiter);
 
-// Health check
+// Health check endpoint (for Docker healthcheck)
+app.get("/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Root endpoint
 app.get("/", (_req: Request, res: Response) => {
   res.json({ success: true, message: "API is running" });
 });

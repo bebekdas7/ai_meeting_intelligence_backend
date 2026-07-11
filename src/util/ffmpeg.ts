@@ -1,9 +1,13 @@
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 
-ffmpeg.setFfmpegPath(ffmpegPath as string);
+// Use system ffmpeg/ffprobe binaries (installed via apt-get in Docker or system package manager)
+// In production Docker, FFmpeg is installed via: apt-get install ffmpeg
+// In development, you should have FFmpeg installed on your system
 ffmpeg.setFfprobePath(ffprobeStatic.path);
+
+// Optional: Explicitly set ffmpeg path if needed (usually not necessary if ffmpeg is in PATH)
+// ffmpeg.setFfmpegPath("/usr/bin/ffmpeg");
 
 export { ffmpeg };
 
